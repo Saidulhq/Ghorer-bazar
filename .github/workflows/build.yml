@@ -1,4 +1,4 @@
-name: Android CI
+  name: Android CI
 
 on:
   push:
@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Ghorer-bazar
 
     steps:
     - uses: actions/checkout@v4
@@ -23,7 +27,4 @@ jobs:
       uses: gradle/actions/setup-gradle@v4
 
     - name: Build Android App
-      defaults:
-        run:
-          working-directory: Ghorer-bazar
       run: gradle assembleDebug --no-daemon
