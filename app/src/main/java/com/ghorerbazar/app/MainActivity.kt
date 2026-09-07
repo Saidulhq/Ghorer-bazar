@@ -33,12 +33,96 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
+// --- 1. Database Entities ---
+@Entity(tableName = "bazar_items")
+data class BazarItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val category: String,
+    val quantity: Double,
+    val unit: String,
+    val unitPrice: Double,
+    val totalPrice: Double,
+    val date: String,
+    val time: String,
+    val shopName: String = "",
+    val paymentMethod: String = "নগদ",
+    val note: String = ""
+)
+
+@Entity(tableName = "shopping_list")
+data class ShoppingListItem(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val quantity: String,
+    val isBought: Boolean = false
+)
+
+@Entity(tableName = "price_history")
+data class PriceHistory(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val itemName: String,
+    val price: Double,
+    val date: String
+)
+
+// --- 2. DAO Interface ---
+@Dao
+interface BazarDao {
+    @Query("SELECT * FROM bazar_items ORDER BY id DESC")
+    fun getAllItems(): Flow<List<BazarItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertItem(item: BazarItemEntity)
+
+    @Query("SELECT * FROM shopping_list ORDER BY id DESC")
+    fun getShoppingList(): Flow<List<ShoppingListItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertShoppingItem(item: ShoppingListItem)
+
+    @Update
+    suspend fun updateShoppingItem(item: ShoppingListItem)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPriceHistory(history: PriceHistory)
+
+    @Query("SELECT SUM(totalPrice) FROM bazar_items")
+    fun getTotalExpense(): Flow<Double?>
+}
+
+// --- 3. Room Database Class ---
+@Database(entities = [BazarItemEntity::class, ShoppingListItem::class, PriceHistory::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun bazarDao(): BazarDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "ghorer_bazar_db"
+                ).fallbackToDestructiveMigration().build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+
+// --- 4. Main Activity ---
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,7 +182,7 @@ fun MainScreen() {
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
-                    label = { Text("রিপোর্ট/PDF") }
+                    label = { Text("রিপোর্ট") }
                 )
             }
         },
@@ -422,7 +506,7 @@ fun ReceiptDialog(item: BazarItemEntity, onDismiss: () -> Unit, context: Context
         confirmButton = {
             Button(
                 onClick = {
-                    Toast.makeText(context, "ব্লুটুথ থার্মাল প্রিন্টারে পাঠানো হচ্ছে...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "প্রিন্ট পাঠানো হচ্ছে...", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
             ) { Text("প্রিন্ট (POS)") }
