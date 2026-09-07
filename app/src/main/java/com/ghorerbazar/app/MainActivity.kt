@@ -33,18 +33,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.room.*
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- 1. Database Entities ---
-@Entity(tableName = "bazar_items")
-data class BazarItemEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+data class BazarItemData(
+    val id: Int,
     val name: String,
     val category: String,
     val quantity: Double,
@@ -54,81 +49,22 @@ data class BazarItemEntity(
     val date: String,
     val time: String,
     val shopName: String = "",
-    val paymentMethod: String = "নগদ",
-    val note: String = ""
+    val paymentMethod: String = "নগদ"
 )
 
-@Entity(tableName = "shopping_list")
-data class ShoppingListItem(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+data class ShoppingItemData(
+    val id: Int,
     val name: String,
     val quantity: String,
-    val isBought: Boolean = false
+    var isBought: Boolean = false
 )
 
-@Entity(tableName = "price_history")
-data class PriceHistory(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val itemName: String,
-    val price: Double,
-    val date: String
-)
-
-// --- 2. DAO Interface ---
-@Dao
-interface BazarDao {
-    @Query("SELECT * FROM bazar_items ORDER BY id DESC")
-    fun getAllItems(): Flow<List<BazarItemEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertItem(item: BazarItemEntity)
-
-    @Query("SELECT * FROM shopping_list ORDER BY id DESC")
-    fun getShoppingList(): Flow<List<ShoppingListItem>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertShoppingItem(item: ShoppingListItem)
-
-    @Update
-    suspend fun updateShoppingItem(item: ShoppingListItem)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPriceHistory(history: PriceHistory)
-
-    @Query("SELECT SUM(totalPrice) FROM bazar_items")
-    fun getTotalExpense(): Flow<Double?>
-}
-
-// --- 3. Room Database Class ---
-@Database(entities = [BazarItemEntity::class, ShoppingListItem::class, PriceHistory::class], version = 1, exportSchema = false)
-abstract class AppDatabase : RoomDatabase() {
-    abstract fun bazarDao(): BazarDao
-
-    companion object {
-        @Volatile
-        private var INSTANCE: AppDatabase? = null
-
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "ghorer_bazar_db"
-                ).fallbackToDestructiveMigration().build()
-                INSTANCE = instance
-                instance
-            }
-        }
-    }
-}
-
-// --- 4. Main Activity ---
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             GhorerBazarTheme {
-                MainScreen()
+                MainAppScreen()
             }
         }
     }
@@ -141,21 +77,19 @@ val AccentOrange = Color(0xFFE65100)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainAppScreen() {
     val context = LocalContext.current
-    val db = remember { AppDatabase.getDatabase(context) }
-    val dao = db.bazarDao()
-    val scope = rememberCoroutineScope()
 
-    val itemList by dao.getAllItems().collectAsState(initial = emptyList())
-    val shoppingList by dao.getShoppingList().collectAsState(initial = emptyList())
-    val totalExpense by dao.getTotalExpense().collectAsState(initial = 0.0)
+    val itemList = remember { mutableStateListOf<BazarItemData>() }
+    val shoppingList = remember { mutableStateListOf<ShoppingItemData>() }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAddBazarDialog by remember { mutableStateOf(false) }
     var showAddFordoDialog by remember { mutableStateOf(false) }
-    var selectedItemForReceipt by remember { mutableStateOf<BazarItemEntity?>(null) }
+    var selectedItemForReceipt by remember { mutableStateOf<BazarItemData?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    val totalExpense = itemList.sumOf { it.totalPrice }
 
     Scaffold(
         bottomBar = {
@@ -204,15 +138,15 @@ fun MainScreen() {
                 .background(LightBg)
                 .padding(padding)
         ) {
-            HeaderBanner(totalExpense = totalExpense ?: 0.0)
+            HeaderBanner(totalExpense = totalExpense)
 
             when (selectedTab) {
                 0 -> HomeScreen(itemList = itemList, onAddClick = { showAddBazarDialog = true }, onItemClick = { selectedItemForReceipt = it })
                 1 -> BazarScreen(itemList = itemList, searchQuery = searchQuery, onSearchChange = { searchQuery = it }, onItemClick = { selectedItemForReceipt = it })
-                2 -> FordoScreen(shoppingList = shoppingList, onToggle = { item ->
-                    scope.launch { dao.updateShoppingItem(item.copy(isBought = !item.isBought)) }
+                2 -> FordoScreen(shoppingList = shoppingList, onToggle = { index ->
+                    shoppingList[index] = shoppingList[index].copy(isBought = !shoppingList[index].isBought)
                 })
-                3 -> ReportAndPdfScreen(itemList = itemList, totalExpense = totalExpense ?: 0.0, context = context)
+                3 -> ReportAndPdfScreen(itemList = itemList, totalExpense = totalExpense, context = context)
             }
         }
     }
@@ -220,27 +154,24 @@ fun MainScreen() {
     if (showAddBazarDialog) {
         AddBazarDialog(
             onDismiss = { showAddBazarDialog = false },
-            onSave = { name, cat, qty, unit, price, shop, payMethod, note ->
-                scope.launch {
-                    val dateStr = SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()).format(Date())
-                    val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-                    val item = BazarItemEntity(
-                        name = name,
-                        category = cat,
-                        quantity = qty,
-                        unit = unit,
-                        unitPrice = price,
-                        totalPrice = qty * price,
-                        date = dateStr,
-                        time = timeStr,
-                        shopName = shop,
-                        paymentMethod = payMethod,
-                        note = note
-                    )
-                    dao.insertItem(item)
-                    dao.insertPriceHistory(PriceHistory(itemName = name, price = price, date = dateStr))
-                    showAddBazarDialog = false
-                }
+            onSave = { name, cat, qty, unit, price, shop, payMethod ->
+                val dateStr = SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()).format(Date())
+                val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                val item = BazarItemData(
+                    id = itemList.size + 1,
+                    name = name,
+                    category = cat,
+                    quantity = qty,
+                    unit = unit,
+                    unitPrice = price,
+                    totalPrice = qty * price,
+                    date = dateStr,
+                    time = timeStr,
+                    shopName = shop,
+                    paymentMethod = payMethod
+                )
+                itemList.add(0, item)
+                showAddBazarDialog = false
             }
         )
     }
@@ -249,10 +180,8 @@ fun MainScreen() {
         AddFordoDialog(
             onDismiss = { showAddFordoDialog = false },
             onSave = { name, qty ->
-                scope.launch {
-                    dao.insertShoppingItem(ShoppingListItem(name = name, quantity = qty))
-                    showAddFordoDialog = false
-                }
+                shoppingList.add(0, ShoppingItemData(id = shoppingList.size + 1, name = name, quantity = qty))
+                showAddFordoDialog = false
             }
         )
     }
@@ -311,7 +240,7 @@ fun HeaderBanner(totalExpense: Double) {
 }
 
 @Composable
-fun HomeScreen(itemList: List<BazarItemEntity>, onAddClick: () -> Unit, onItemClick: (BazarItemEntity) -> Unit) {
+fun HomeScreen(itemList: List<BazarItemData>, onAddClick: () -> Unit, onItemClick: (BazarItemData) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -324,14 +253,18 @@ fun HomeScreen(itemList: List<BazarItemEntity>, onAddClick: () -> Unit, onItemCl
             }
         }
 
-        items(itemList.take(10)) { item ->
-            BazarCard(item, onClick = { onItemClick(item) })
+        if (itemList.isEmpty()) {
+            item { Text("কোনো বাজারের তথ্য নেই। '+ যোগ করুন' এ চাপুন।", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
+        } else {
+            items(itemList.take(10)) { item ->
+                BazarCard(item, onClick = { onItemClick(item) })
+            }
         }
     }
 }
 
 @Composable
-fun BazarScreen(itemList: List<BazarItemEntity>, searchQuery: String, onSearchChange: (String) -> Unit, onItemClick: (BazarItemEntity) -> Unit) {
+fun BazarScreen(itemList: List<BazarItemData>, searchQuery: String, onSearchChange: (String) -> Unit, onItemClick: (BazarItemData) -> Unit) {
     val filteredList = itemList.filter { it.name.contains(searchQuery, ignoreCase = true) || it.category.contains(searchQuery, ignoreCase = true) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -353,13 +286,14 @@ fun BazarScreen(itemList: List<BazarItemEntity>, searchQuery: String, onSearchCh
 }
 
 @Composable
-fun FordoScreen(shoppingList: List<ShoppingListItem>, onToggle: (ShoppingListItem) -> Unit) {
+fun FordoScreen(shoppingList: List<ShoppingItemData>, onToggle: (Int) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(shoppingList) { item ->
+        items(shoppingList.size) { index ->
+            val item = shoppingList[index]
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(10.dp),
@@ -371,7 +305,7 @@ fun FordoScreen(shoppingList: List<ShoppingListItem>, onToggle: (ShoppingListIte
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = item.isBought, onCheckedChange = { onToggle(item) })
+                        Checkbox(checked = item.isBought, onCheckedChange = { onToggle(index) })
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
@@ -396,7 +330,7 @@ fun FordoScreen(shoppingList: List<ShoppingListItem>, onToggle: (ShoppingListIte
 }
 
 @Composable
-fun ReportAndPdfScreen(itemList: List<BazarItemEntity>, totalExpense: Double, context: Context) {
+fun ReportAndPdfScreen(itemList: List<BazarItemData>, totalExpense: Double, context: Context) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -424,7 +358,7 @@ fun ReportAndPdfScreen(itemList: List<BazarItemEntity>, totalExpense: Double, co
 }
 
 @Composable
-fun BazarCard(item: BazarItemEntity, onClick: () -> Unit) {
+fun BazarCard(item: BazarItemData, onClick: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(12.dp),
@@ -460,7 +394,7 @@ fun BazarCard(item: BazarItemEntity, onClick: () -> Unit) {
 }
 
 @Composable
-fun ReceiptDialog(item: BazarItemEntity, onDismiss: () -> Unit, context: Context) {
+fun ReceiptDialog(item: BazarItemData, onDismiss: () -> Unit, context: Context) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("POS ক্যাশ মেমো", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
@@ -516,7 +450,7 @@ fun ReceiptDialog(item: BazarItemEntity, onDismiss: () -> Unit, context: Context
 }
 
 @Composable
-fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String, Double, String, String, String) -> Unit) {
+fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String, Double, String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("চাল/ডাল") }
     var qty by remember { mutableStateOf("") }
@@ -524,7 +458,6 @@ fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, Strin
     var price by remember { mutableStateOf("") }
     var shop by remember { mutableStateOf("") }
     var payMethod by remember { mutableStateOf("নগদ (Cash)") }
-    var note by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -556,7 +489,6 @@ fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, Strin
                 )
                 OutlinedTextField(value = shop, onValueChange = { shop = it }, label = { Text("দোকান/বাজারের নাম") })
                 OutlinedTextField(value = payMethod, onValueChange = { payMethod = it }, label = { Text("পেমেন্ট মেথড") })
-                OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("অতিরিক্ত মন্তব্য") })
             }
         },
         confirmButton = {
@@ -564,7 +496,7 @@ fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, Strin
                 onClick = {
                     val q = qty.toDoubleOrNull() ?: 1.0
                     val p = price.toDoubleOrNull() ?: 0.0
-                    if (name.isNotEmpty()) onSave(name, category, q, unit, p, shop, payMethod, note)
+                    if (name.isNotEmpty()) onSave(name, category, q, unit, p, shop, payMethod)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
             ) { Text("সেভ করুন") }
@@ -597,7 +529,7 @@ fun AddFordoDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
     )
 }
 
-fun generatePdfReport(context: Context, itemList: List<BazarItemEntity>, totalExpense: Double) {
+fun generatePdfReport(context: Context, itemList: List<BazarItemData>, totalExpense: Double) {
     val pdfDocument = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
     val page = pdfDocument.startPage(pageInfo)
