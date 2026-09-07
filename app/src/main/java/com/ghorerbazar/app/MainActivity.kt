@@ -1,9 +1,11 @@
 package com.ghorerbazar.app
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.widget.Toast
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -83,9 +86,13 @@ fun MainAppScreen() {
     val itemList = remember { mutableStateListOf<BazarItemData>() }
     val shoppingList = remember { mutableStateListOf<ShoppingItemData>() }
 
+    var userBudget by remember { mutableDoubleStateOf(50000.0) }
+    var userShopName by remember { mutableStateOf("ঘরের বাজার") }
+
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAddBazarDialog by remember { mutableStateOf(false) }
     var showAddFordoDialog by remember { mutableStateOf(false) }
+    var showBudgetDialog by remember { mutableStateOf(false) }
     var selectedItemForReceipt by remember { mutableStateOf<BazarItemData?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -118,6 +125,12 @@ fun MainAppScreen() {
                     icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
                     label = { Text("রিপোর্ট") }
                 )
+                NavigationBarItem(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("সেটিংস") }
+                )
             }
         },
         floatingActionButton = {
@@ -138,7 +151,12 @@ fun MainAppScreen() {
                 .background(LightBg)
                 .padding(padding)
         ) {
-            HeaderBanner(totalExpense = totalExpense)
+            HeaderBanner(
+                totalExpense = totalExpense,
+                budget = userBudget,
+                shopName = userShopName,
+                onBudgetClick = { showBudgetDialog = true }
+            )
 
             when (selectedTab) {
                 0 -> HomeScreen(itemList = itemList, onAddClick = { showAddBazarDialog = true }, onItemClick = { selectedItemForReceipt = it })
@@ -147,12 +165,30 @@ fun MainAppScreen() {
                     shoppingList[index] = shoppingList[index].copy(isBought = !shoppingList[index].isBought)
                 })
                 3 -> ReportAndPdfScreen(itemList = itemList, totalExpense = totalExpense, context = context)
+                4 -> SettingsScreen(
+                    shopName = userShopName,
+                    onShopNameChange = { userShopName = it },
+                    budget = userBudget,
+                    onBudgetChange = { userBudget = it }
+                )
             }
         }
     }
 
+    if (showBudgetDialog) {
+        EditBudgetDialog(
+            currentBudget = userBudget,
+            onDismiss = { showBudgetDialog = false },
+            onSave = { newBudget ->
+                userBudget = newBudget
+                showBudgetDialog = false
+            }
+        )
+    }
+
     if (showAddBazarDialog) {
         AddBazarDialog(
+            defaultShop = userShopName,
             onDismiss = { showAddBazarDialog = false },
             onSave = { name, cat, qty, unit, price, shop, payMethod ->
                 val dateStr = SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()).format(Date())
@@ -167,7 +203,7 @@ fun MainAppScreen() {
                     totalPrice = qty * price,
                     date = dateStr,
                     time = timeStr,
-                    shopName = shop,
+                    shopName = shop.ifEmpty { userShopName },
                     paymentMethod = payMethod
                 )
                 itemList.add(0, item)
@@ -192,7 +228,7 @@ fun MainAppScreen() {
 }
 
 @Composable
-fun HeaderBanner(totalExpense: Double) {
+fun HeaderBanner(totalExpense: Double, budget: Double, shopName: String, onBudgetClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -212,7 +248,7 @@ fun HeaderBanner(totalExpense: Double) {
                     Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White)
                 }
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("ঘরের বাজার", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(shopName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Card(
@@ -232,7 +268,14 @@ fun HeaderBanner(totalExpense: Double) {
                         Text("মোট বাজার খরচ", fontSize = 13.sp, color = Color.Gray)
                         Text("৳ $totalExpense", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AccentOrange)
                     }
-                    Text("বাজেট সীমা: ৫০,০০০৳", fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold)
+                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.clickable { onBudgetClick() }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("বাজেট সীমা", fontSize = 11.sp, color = Color.Gray)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(12.dp), tint = PrimaryGreen)
+                        }
+                        Text("৳ $budget", fontSize = 14.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -248,7 +291,7 @@ fun HomeScreen(itemList: List<BazarItemData>, onAddClick: () -> Unit, onItemClic
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("সাম্প্রতিক বাজার (POS রসিদের জন্য ক্লিক করুন)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("সাম্প্রতিক বাজার (রসিদের জন্য ক্লিক করুন)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 TextButton(onClick = onAddClick) { Text("+ যোগ করুন") }
             }
         }
@@ -344,13 +387,58 @@ fun ReportAndPdfScreen(itemList: List<BazarItemData>, totalExpense: Double, cont
                 Text("মোট কেনাকাটার সংখ্যা: ${itemList.size} টি", fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { generatePdfReport(context, itemList, totalExpense) },
+                    onClick = { generateAndOpenPdfReport(context, itemList, totalExpense) },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.PictureAsPdf, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("PDF রিপোর্ট ডাউনলোড করুন")
+                    Text("PDF দেখুন ও ডাউনলোড করুন")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(shopName: String, onShopNameChange: (String) -> Unit, budget: Double, onBudgetChange: (Double) -> Unit) {
+    var tempShop by remember { mutableStateOf(shopName) }
+    var tempBudget by remember { mutableStateOf(budget.toString()) }
+
+    Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("অ্যাপ সেটিংস", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                
+                OutlinedTextField(
+                    value = tempShop,
+                    onValueChange = { tempShop = it },
+                    label = { Text("দোকান/ঘরের নাম") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = tempBudget,
+                    onValueChange = { tempBudget = it },
+                    label = { Text("মাসিক বাজেট সীমা (৳)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        onShopNameChange(tempShop)
+                        val b = tempBudget.toDoubleOrNull() ?: budget
+                        onBudgetChange(b)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("সেটিংস সেভ করুন")
                 }
             }
         }
@@ -397,7 +485,7 @@ fun BazarCard(item: BazarItemData, onClick: () -> Unit) {
 fun ReceiptDialog(item: BazarItemData, onDismiss: () -> Unit, context: Context) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("POS ক্যাশ মেমো", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        title = { Text("ক্যাশ মেমো", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
         text = {
             Column(
                 modifier = Modifier
@@ -440,23 +528,51 @@ fun ReceiptDialog(item: BazarItemData, onDismiss: () -> Unit, context: Context) 
         confirmButton = {
             Button(
                 onClick = {
-                    Toast.makeText(context, "প্রিন্ট পাঠানো হচ্ছে...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Thermal Printer-এ পাঠানো হচ্ছে...", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
-            ) { Text("প্রিন্ট (POS)") }
+            ) { Text("Thermal Print") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("বন্ধ করুন") } }
     )
 }
 
 @Composable
-fun AddBazarDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String, Double, String, String) -> Unit) {
+fun EditBudgetDialog(currentBudget: Double, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
+    var budgetInput by remember { mutableStateOf(currentBudget.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("বাজেট পরিবর্তন করুন") },
+        text = {
+            OutlinedTextField(
+                value = budgetInput,
+                onValueChange = { budgetInput = it },
+                label = { Text("নতুন বাজেট সীমা (৳)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val b = budgetInput.toDoubleOrNull() ?: currentBudget
+                    onSave(b)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+            ) { Text("সেভ করুন") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("বাতিল") } }
+    )
+}
+
+@Composable
+fun AddBazarDialog(defaultShop: String, onDismiss: () -> Unit, onSave: (String, String, Double, String, Double, String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("চাল/ডাল") }
     var qty by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("কেজি") }
     var price by remember { mutableStateOf("") }
-    var shop by remember { mutableStateOf("") }
+    var shop by remember { mutableStateOf(defaultShop) }
     var payMethod by remember { mutableStateOf("নগদ (Cash)") }
 
     AlertDialog(
@@ -529,7 +645,7 @@ fun AddFordoDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
     )
 }
 
-fun generatePdfReport(context: Context, itemList: List<BazarItemData>, totalExpense: Double) {
+fun generateAndOpenPdfReport(context: Context, itemList: List<BazarItemData>, totalExpense: Double) {
     val pdfDocument = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
     val page = pdfDocument.startPage(pageInfo)
@@ -560,9 +676,16 @@ fun generatePdfReport(context: Context, itemList: List<BazarItemData>, totalExpe
     val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "Ghorer_Bazar_Report.pdf")
     try {
         pdfDocument.writeTo(FileOutputStream(file))
-        Toast.makeText(context, "PDF সংরক্ষিত হয়েছে: ${file.name}", Toast.LENGTH_LONG).show()
+        
+        val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/pdf")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "PDF ওপেন করুন"))
+
     } catch (e: Exception) {
-        Toast.makeText(context, "PDF তৈরিতে সমস্যা হয়েছে", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "PDF সংরক্ষণ হয়েছে: ${file.path}", Toast.LENGTH_LONG).show()
     }
     pdfDocument.close()
 }
