@@ -18,21 +18,9 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Build with Gradle Action
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
     - name: Build Android App
-      run: |
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
-        elif [ -f "Ghorer-bazar/gradlew" ]; then
-          cd Ghorer-bazar
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
-        else
-          echo "gradlew file not found"
-          exit 1
-        fi
+      run: gradle assembleDebug --stacktrace
