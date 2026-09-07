@@ -19,9 +19,8 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Build Android App
-      run: |
-        if [ -d "Ghorer-bazar" ]; then
-          cd Ghorer-bazar
-        fi
-        gradle assembleDebug --no-daemon
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug
