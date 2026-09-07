@@ -24,11 +24,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,7 +66,8 @@ fun MainScreen() {
 
     val itemList by dao.getAllItems().collectAsState(initial = emptyList())
     val shoppingList by dao.getShoppingList().collectAsState(initial = emptyList())
-    val totalExpense by dao.getTotalExpense().collectAsState(initial = 0.0)
+    val totalExpenseVal by dao.getTotalExpense().collectAsState(initial = 0.0)
+    val totalExpense = totalExpenseVal ?: 0.0
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showAddBazarDialog by remember { mutableStateOf(false) }
@@ -143,7 +142,7 @@ fun MainScreen() {
                 .background(LightBg)
                 .padding(padding)
         ) {
-            HeaderBanner3D(totalExpense = totalExpense ?: 0.0)
+            HeaderBanner3D(totalExpense = totalExpense)
 
             when (selectedTab) {
                 0 -> HomeScreen(itemList = itemList, onAddClick = { showAddBazarDialog = true }, onItemClick = { selectedItemForReceipt = it })
@@ -151,7 +150,7 @@ fun MainScreen() {
                 2 -> FordoScreen(shoppingList = shoppingList, onToggle = { item ->
                     scope.launch { dao.updateShoppingItem(item.copy(isBought = !item.isBought)) }
                 })
-                3 -> ReportAndPdfScreen(itemList = itemList, totalExpense = totalExpense ?: 0.0, context = context)
+                3 -> ReportAndPdfScreen(itemList = itemList, totalExpense = totalExpense, context = context)
             }
         }
     }
