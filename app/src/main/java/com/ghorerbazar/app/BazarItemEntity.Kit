@@ -1,0 +1,36 @@
+package com.ghorerbazar.app
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "bazar_items")
+data class BazarItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val category: String,
+    val quantity: Double,
+    val unit: String,
+    val unitPrice: Double,
+    val totalPrice: Double,
+    val date: String,
+    val time: String,
+    val shopName: String,
+    val paymentMethod: String,
+    val note: String
+)
+
+@Entity(tableName = "shopping_list")
+data class ShoppingListItem(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val quantity: String,
+    val isBought: Boolean = false
+)
+
+@Entity(tableName = "price_history")
+data class PriceHistory(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val itemName: String,
+    val price: Double,
+    val date: String
+)
